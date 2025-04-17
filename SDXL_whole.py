@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-
-"""Cityscapes‑Car‑Inpainting – Zeilen aufgeräumt (Logik unverändert)"""
-
 # -------------------------------------------------------------
 # Imports
 # -------------------------------------------------------------
