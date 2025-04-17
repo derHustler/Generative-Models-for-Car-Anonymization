@@ -81,7 +81,7 @@ outputs/val_masks/
 
 ```bash
 conda activate Kolors
-python kolors_inpainting.py \
+python kolors_steps.py \
   --input_dir  ./outputs/val_masks \
   --output_dir ./outputs/kolors_steps
 ```
@@ -100,7 +100,7 @@ python kolors_whole.py \
 * **Steps**
 ```bash
 conda activate sdxl
-python inpainting_pipeline.py \
+python sdxl_steps.py \
   --input_dir  ./outputs/val_masks \
   --output_dir ./outputs/sdxl_steps
 ```
