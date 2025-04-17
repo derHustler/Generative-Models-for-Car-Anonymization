@@ -1,257 +1,188 @@
+# -------------------------------------------------------------
+# Imports
+# -------------------------------------------------------------
+from __future__ import annotations
+
 from datetime import datetime
-RED = "\033[91m"
-WHITE = "\033[0m"
-
-# Aktuelles Datum und Uhrzeit im benutzerdefinierten Format
-now = datetime.now()
-print(f"Aktuelles Datum und Uhrzeit: {RED}{now.strftime('%Y-%m-%d %H:%M:%S')}{WHITE}")
-
-import time
-
-
-import torch
-print(f"GPU COUNT {RED}{torch.cuda.device_count()}{WHITE}")
-
-import sys
-print(f"Current Python Environment: {RED}{sys.prefix}{WHITE}")
-index="failedIndex"
-
 import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument("--i", type=str)
-#
-parser.add_argument('--input_dir', type=str, required=True, help='Pfad zum verzeichnis mit Masken und Bildern')
-parser.add_argument('--output_dir', type=str, required=True, help='Zielverzeichnis, in dem Bilder gespeichert werden')
-#
-args=parser.parse_args()
-index = args.i
-
-
-
-
-
-import cv2
-import numpy as np
 import json
 import os
+import sys
+import time
+import cv2
+import numpy as np
 from PIL import Image
-#from accelerate import Accelerator
+import torch
 from diffusers import (
     AutoencoderKL,
     UNet2DConditionModel,
-    EulerDiscreteScheduler
+    EulerDiscreteScheduler,
 )
-from diffusers.utils import load_image, check_min_version
-from kolors.pipelines.pipeline_stable_diffusion_xl_chatglm_256_inpainting import StableDiffusionXLInpaintPipeline
+from diffusers.utils import load_image 
+from kolors.pipelines.pipeline_stable_diffusion_xl_chatglm_256_inpainting import (
+    StableDiffusionXLInpaintPipeline,
+)
 from kolors.models.modeling_chatglm import ChatGLMModel
 from kolors.models.tokenization_chatglm import ChatGLMTokenizer
 
+# -------------------------------------------------------------
+# Farb‑Escape‑Sequenzen & Start‑Log
+# -------------------------------------------------------------
+RED = "\033[91m"
+WHITE = "\033[0m"
 
-#accelerator = Accelerator()
+now = datetime.now()
+print(f"Aktuelles Datum und Uhrzeit: {RED}{now:%Y-%m-%d %H:%M:%S}{WHITE}")
 
-# Basispfad zu den Cityscapes-Daten
-#base_dir=args.input_dir
-#output_dir=args.output_dir
-#cities = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
+print(f"GPU COUNT {RED}{torch.cuda.device_count()}{WHITE}")
+print(f"Current Python Environment: {RED}{sys.prefix}{WHITE}")
 
-base_dir="/work/rn583pgoa-workdir/data"
-cities = ['frankfurt', 'lindau', 'munster']
-# Zielverzeichnisse für Bilder und Masken
-#image_output_dir = f"{output_dir}/steps/Kolors_{index}"
-#combined_dir = f"{output_dir}/steps/combined_{index}"
+# -------------------------------------------------------------
+# Argument‑Parsing
+# -------------------------------------------------------------
+parser = argparse.ArgumentParser()
+parser.add_argument("--output_dir", type=str)
+parser.add_argument("--input_dir", type=str)  # Pfad zu Bildern & Masken
+args = parser.parse_args()
 
-image_output_dir = f"/work/rn583pgoa-workdir/generatedImages/whole/Kolors_{index}"
-combined_dir = f"/work/rn583pgoa-workdir/generatedImages/whole/combined_{index}"
+image_output_dir = args.output_dir
+base_dir = args.input_dir
+
+cities = ["frankfurt", "lindau", "munster"]  # ggf. erweitern
 
 print(f"image_output_dir: {RED}'{image_output_dir}'{WHITE}.")
-    
 
+# -------------------------------------------------------------
+# Dateinamen einsammeln
+# -------------------------------------------------------------
+pictures: dict[str, list[str]] = {}
+counter_imgs = 0
 
-# Array, um die Dateinamen zu speichern
-pictures = {}
-
- 
-counter_pics = 0
 for city in cities:
     city_dir = os.path.join(base_dir, "images", city)
-    
     pictures[city] = []
     for filename in os.listdir(city_dir):
-        counter_pics=counter_pics+1
+        counter_imgs += 1
         if filename.endswith("_leftImg8bit.png"):
-            base_name = filename.split("_leftImg8bit.png")[0]
-            pictures[city].append(base_name)
-print(f"{counter_pics} Bilder geladen")
+            pictures[city].append(filename.replace("_leftImg8bit.png", ""))
 
-# Ausgabe der gespeicherten Dateinamen
-#print(pictures)
+print(f"{counter_imgs} Bilder geladen")
 
+# -------------------------------------------------------------
+# Pipeline – Modelle laden
+# -------------------------------------------------------------
+ckpt_dir = "./Kolors/weights/Kolors-Inpainting"  # ggf. Pfad anpassen
 
-#ckpt_dir = "/work/rn583pgoa-workdir/Kolors/weights/Kolors-Inpainting"
-ckpt_dir = "./Kolors/weights/Kolors-Inpainting"
-
-text_encoder = ChatGLMModel.from_pretrained(
-    f'{ckpt_dir}/text_encoder',
-    torch_dtype=torch.float16).half()
-tokenizer = ChatGLMTokenizer.from_pretrained(f'{ckpt_dir}/text_encoder')
-vae = AutoencoderKL.from_pretrained(f"{ckpt_dir}/vae", revision=None).half()
+text_encoder = ChatGLMModel.from_pretrained(f"{ckpt_dir}/text_encoder", torch_dtype=torch.float16).half()
+tokenizer = ChatGLMTokenizer.from_pretrained(f"{ckpt_dir}/text_encoder")
+vae = AutoencoderKL.from_pretrained(f"{ckpt_dir}/vae").half()
 scheduler = EulerDiscreteScheduler.from_pretrained(f"{ckpt_dir}/scheduler")
-unet = UNet2DConditionModel.from_pretrained(f"{ckpt_dir}/unet", revision=None).half()
+unet = UNet2DConditionModel.from_pretrained(f"{ckpt_dir}/unet").half()
 
 pipe = StableDiffusionXLInpaintPipeline(
-        vae=vae,
-        text_encoder=text_encoder,
-        tokenizer=tokenizer,
-        unet=unet,
-        scheduler=scheduler,
+    vae=vae,
+    text_encoder=text_encoder,
+    tokenizer=tokenizer,
+    unet=unet,
+    scheduler=scheduler,
 ).to("cuda")
 
-#if torch.cuda.device_count() > 1:
-#    pipe = accelerator.prepare(pipe)
 
+# -------------------------------------------------------------
+# Prompts & Parameter
+# -------------------------------------------------------------
+prompt = (
+    "A photorealistic car seamlessly integrated into an urban street scene, with consistent texture and lighting. "
+    "Replace the original car with a modern, neutral design, ensuring no logos, license plates, or text. The new car "
+    "has to fill the binary segmentation mask completely."
+)
+negative_prompt = (
+    "worst quality, low resolution, overexposed, blurry, distorted shapes, numbers on doors, text artifacts, "
+    "unrealistic shadows."
+)
 
-
-prompt = "A photorealistic car seamlessly integrated into an urban street scene, with consistent texture and lighting. Replace the original car with a modern, neutral design, ensuring no logos, license plates, or text. The new car has to fill the binary segmentation Mask completley."
 generator = torch.Generator(device="cpu").manual_seed(42)
-negative_prompt="worst quality, low resolution, overexposed, blurry, distorted shapes, numbers on doors, text artifacts, unrealistic shadows."
 
-
-
-
-
-# Prüfen, ob das Verzeichnis existiert
+# -------------------------------------------------------------
+# Ausgabe‑Verzeichnis anlegen
+# -------------------------------------------------------------
 if not os.path.exists(image_output_dir):
-    # Verzeichnis erstellen
     os.makedirs(image_output_dir)
     for city in cities:
         os.makedirs(os.path.join(image_output_dir, city))
-    print(f"Verzeichnis {RED}'{image_output_dir}'{WHITE} und Unterordner für Städte wurden erstellt.")
+    print(f"Verzeichnis {RED}'{image_output_dir}'{WHITE} und Unterordner erstellt.")
 else:
     print(f"Verzeichnis {RED}'{image_output_dir}'{WHITE} existiert bereits.")
 
+# -------------------------------------------------------------
+# Haupt‑Loop – Inpainting pro Auto
+# -------------------------------------------------------------
+zeit_total = 0.0
+car_counter_total = 0
 
-if not os.path.exists(combined_dir):
-    # Verzeichnis erstellen
-    os.makedirs(combined_dir)
-    for city in cities:
-        os.makedirs(os.path.join(combined_dir, city))
-    print(f"Verzeichnis {RED}'{combined_dir}'{WHITE} und Unterordner für Städte wurden erstellt.")
-
-else:
-    print(f"Verzeichnis {RED}'{combined_dir}'{WHITE} existiert bereits.")
-
-
-
-
-import shutil
-import matplotlib.pyplot as plt
-
-
-time_glob = 0
-counter_pics = 0
 for city in cities:
-    
-    
     for base_name in pictures[city]:
-
-        # Lade das Bild und die zugehörige JSON-Datei
         json_path = os.path.join(base_dir, "masks", city, f"{base_name}_gtFine_polygons.json")
-        image_path = os.path.join(base_dir, "images" , city, f"{base_name}_leftImg8bit.png")           
-  
-        in_image = load_image(
-            image_path
-        )
+        image_path = os.path.join(base_dir, "images", city, f"{base_name}_leftImg8bit.png")
 
-        with open(json_path, 'r') as f:
+        in_image = load_image(image_path)
+
+        with open(json_path, "r", encoding="utf-8") as f:
             results = json.load(f)
 
-        all_polygons = []
-        
-        # Iteriere über alle Objekte und extrahiere die Polygone für Autos
-        for item in results["objects"]:
-            if item["label"] == "car":
-                polygon_points = np.array(item['polygon'], np.int32)
-                polygon_points = polygon_points.reshape((-1, 1, 2))
-                all_polygons.append(polygon_points)
+        polygons = [
+            np.array(obj["polygon"], np.int32).reshape((-1, 1, 2))
+            for obj in results["objects"]
+            if obj["label"] == "car"
+        ]
 
-        gt_bgr = cv2.imread(image_path)
-        gt = cv2.cvtColor(gt_bgr, cv2.COLOR_BGR2RGB)
-
+        gt_rgb = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
         mask = np.zeros((1024, 2048), dtype=np.uint8)
 
-        time_pic = 0
-        
-        counter=0
+        img_before = in_image
+        img_car_count = 0
+        img_time = 0.0
 
-        image_before = in_image
-        
-        for polygon in all_polygons:
-            cv2.fillPoly(mask, [polygon], 255)
+        for poly in polygons:
+            cv2.fillPoly(mask, [poly], 255)
             in_mask = Image.fromarray(mask)
-            
-            
-            start = time.time()
 
-            
+            start = time.time()
             result = pipe(
-                prompt = prompt,
-                image = image_before,
-                mask_image = in_mask,
+                prompt=prompt,
+                image=img_before,
+                mask_image=in_mask,
                 height=1024,
                 width=2048,
-                guidance_scale = 6.0,
-                generator= generator,
-                num_inference_steps= 25,
-                negative_prompt = negative_prompt,
-                num_images_per_prompt = 1,
-                strength = 0.999
+                guidance_scale=6.0,
+                generator=generator,
+                num_inference_steps=25,
+                negative_prompt=negative_prompt,
+                num_images_per_prompt=1,
+                strength=0.999,
             ).images[0]
+            img_time += time.time() - start
 
-            end=time.time()
-
-            
-            
-            time_it = end - start
-
-            time_pic = time_pic + time_it
-            
             result_np = np.array(result)
-            counter=counter+1
-            Image.fromarray(result_np).save(os.path.join(image_output_dir, city, f"{base_name}_{counter}.png"))
-            
-            masked_result = cv2.bitwise_and(result_np, result_np, mask=mask)
-        
-            inverse_mask = cv2.bitwise_not(mask)
-        
-            gt_background = cv2.bitwise_and(gt, gt, mask=inverse_mask)
-            
-            gt = cv2.add(gt_background, masked_result)
+            img_car_count += 1
+            Image.fromarray(result_np).save(
+                os.path.join(image_output_dir, city, f"{base_name}_{img_car_count}.png")
+            )
 
-            image_before = Image.fromarray(gt)
-            
-            mask = np.zeros((1024, 2048), dtype=np.uint8)
+            # Verschmelzen mit Original
+            masked = cv2.bitwise_and(result_np, result_np, mask=mask)
+            inv_mask = cv2.bitwise_not(mask)
+            background = cv2.bitwise_and(gt_rgb, gt_rgb, mask=inv_mask)
+            gt_rgb = cv2.add(background, masked)
 
-            counter_pics = counter_pics + 1
-        
-        
-        time_glob=time_glob + time_pic    
-        counter=0
-        
-        out_pic=f"{base_name}_Kolors.png"
-        out_norm =f"{base_name}.png"
-        out_OG=f"{base_name}_O.png"
+            img_before = Image.fromarray(gt_rgb)
+            mask.fill(0)
+            car_counter_total += 1
 
-        
-        Image.fromarray(gt).save(os.path.join(image_output_dir, city, out_norm))
-        Image.fromarray(gt).save(os.path.join(combined_dir, city, out_pic))
-        in_image.save(os.path.join(combined_dir, city, out_OG))
-        
-        
-        
-        print(f"Image saved to: {os.path.join(image_output_dir, city, out_norm)}")
-        print(f"Image saved to: {os.path.join(combined_dir, city, out_pic)}")
-        
-        print(f"Verstrichene Zeit: {time_glob:.2f} Sekunden für {counter_pics} Autos")
+        zeit_total += img_time
+        Image.fromarray(gt_rgb).save(os.path.join(image_output_dir, city, f"{base_name}.png"))
 
+        print(f"Image saved to: {os.path.join(image_output_dir, city, base_name + '.png')}")
+        print(f"Verstrichene Zeit: {zeit_total:.2f} Sekunden für {car_counter_total} Autos")
 
 print("Ende")
