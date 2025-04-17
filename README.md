@@ -1,62 +1,145 @@
-# Bachelorarbeit: Vergleich von GANs und Diffusionsmodellen zur Autogenerierung in Cityscapes
+# Bachelorarbeit · Vergleich von GANs und Diffusions‑Modellen zur Autogenerierung in Cityscapes
 
-Dieses Repository enthält den Code und Anleitungen zur Reproduktion meiner Bachelorarbeit, in der verschiedene Bildgenerierungsmodelle (DP_GAN, OASIS, Kolors, SDXL) miteinander verglichen werden.
+Dieses Repository enthält den begleitenden Code zu meiner Bachelorarbeit, in der ich verschiedene Bildgenerierungsmodelle — **DP‑GAN, OASIS, Kolors** und **Stable Diffusion XL (SDXL)** — auf dem Cityscapes‑Datensatz vergleiche.
 
-## Inhalt
+---
+## Inhaltsverzeichnis
+1. [Setup](#setup)
+   1. [Kolors](#kolors)
+   2. [DP‑GAN](#dp_gan)
+   3. [OASIS](#oasis)
+   4. [SDXL](#sdxl)
+2. [Cityscapes vorbereiten](#cityscapes-vorbereiten)
+3. [Masken generieren](#masken-generieren)
+4. [Bilder generieren](#bilder-generieren)
+   1. [Kolors – Steps & Whole](#kolors)
+   2. [SDXL – Steps & Whole](#sdxl-1)
+   3. [DP‑GAN](#dp_gan-1)
+   4. [OASIS](#oasis-1)
 
-1. [Setup](#setup)  
-2. [Cityscapes vorbereiten](#cityscapes-vorbereiten)  
-3. [Masken generieren](#masken-generieren)  
+---
+## Setup<a name="setup"></a>
 
-# Setup
+### Kolors<a name="kolors"></a>
+Folge der offiziellen Anleitung, um das **Kolors‑Inpainting**‑Repository zu klonen und die passende Conda‑Umgebung anzulegen:
+<https://github.com/Kwai-Kolors/Kolors/blob/master/inpainting/README.md>
 
-### 1. Kolors einrichten
+Alternativ kannst du das Modell direkt von Hugging Face laden: <https://huggingface.co/Kwai-Kolors/Kolors-Inpainting>
 
-Um das Kolors-Repository für Inpainting zu klonen und die entsprechende Umgebung zu erstellen, folge bitte den Anweisungen hier:  
-https://github.com/Kwai-Kolors/Kolors/blob/master/inpainting/README.md
-
-### 2. DP_GAN einrichten
-
-Um das DP_GAN-Repository zu klonen und die entsprechende Umgebung zu erstellen, folge bitte den Anweisungen hier:  
-https://github.com/sj-li/DP_GAN/tree/main
-
-Die Checkpoints der vortrainierten Modelle sind hier als ZIP-Dateien verfügbar. Kopiere sie in den Ordner `checkpoints` (Standard ist `./checkpoints`, falls nicht vorhanden bitte erstellen) und entpacke sie dort. Die Ordnerstruktur sollte wie folgt aussehen:
+---
+### DP‑GAN<a name="dp_gan"></a>
+1. Repository klonen: <https://github.com/sj-li/DP_GAN>
+2. Checkpoints herunterladen (ZIP) und in **`./checkpoints/`** entpacken. Die Struktur sollte danach so aussehen:
 
 ```bash
-.
-├── DP_GAN/
-│   └── scripts/
-│   └── checkpoints/
-│       └── dp_gan_cityscapes/
-│   └── [...]
-└── [...]
+DP_GAN/
+├── checkpoints/
+│   └── dp_gan_cityscapes/
+└── scripts/
 ```
 
-### 3. OASIS einrichten
+---
+### OASIS<a name="oasis"></a>
+* Repository & Cityscapes‑Checkpoint: <https://github.com/boschresearch/OASIS>
 
-Um das OASIS-Repository zu klonen, das vortrainierte Cityscapes-Modell herunterzuladen und die Umgebung zu erstellen, folge bitte den Anweisungen hier:  
-https://github.com/boschresearch/OASIS
-
-### 4. SDXL einrichten
-
+---
+### SDXL<a name="sdxl"></a>
 ```bash
-conda create --name sdxl 
+conda create -n sdxl python=3.10
 conda activate sdxl
 pip install -r requirementsSDXL.txt
 ```
 
 ---
+## Cityscapes vorbereiten<a name="cityscapes-vorbereiten"></a>
+Zur Konvertierung und Aufteilung des Cityscapes‑Datensatzes nutze die Anweisungen aus SPADE:
+<https://github.com/NVlabs/SPADE>
 
-## Cityscapes vorbereiten
-
-Für die Vorbereitung des Cityscapes-Datensatzes folge bitte den Anweisungen aus folgendem Repository:  
-https://github.com/NVlabs/SPADE
-
-## Masken generieren
-
-Nutze das Skript `mask_generator.py`, um binäre Masken aus den Cityscapes-Labelmaps zu erzeugen und gemeinsam mit den Bildern in einem Ordner abzuspeichern. Ersetze `--input_dir` durch das zu bearbeitende Set und `--output_dir` durch das gewünschte Ausgabeverzeichnis.
+---
+## Masken generieren<a name="masken-generieren"></a>
+Mit **`mask_generator.py`** erstellst du binäre Masken (Klasse *car*) und kopierst die zugehörigen RGB‑Bilder.
 
 ```bash
 conda activate sdxl
-python mask_generator.py --input_dir ./datasets/cityscapes/val --output_dir ./val
+python mask_generator.py \
+  --input_dir  /datasets/cityscapes/val \
+  --output_dir ./outputs/val_masks
 ```
+
+Dies legt folgende Ordner an:
+
+```
+outputs/val_masks/
+├── images/<city>/*_leftImg8bit.png
+└── masks/<city>/*_gtFine_binary.png
+```
+
+---
+## Bilder generieren<a name="bilder-generieren"></a>
+### Kolors<a name="kolors"></a>
+* **Steps** (Inpainting jedes Auto einzeln)
+
+```bash
+conda activate Kolors
+python kolors_inpainting.py \
+  --input_dir  ./outputs/val_masks \
+  --output_dir ./outputs/kolors_steps
+```
+
+* **Whole** (Gesamtmaske in einem Schritt)
+
+```bash
+conda activate Kolors
+python kolors_whole.py \
+  --input_dir  ./outputs/val_masks \
+  --output_dir ./outputs/kolors_whole
+```
+
+---
+### SDXL<a name="sdxl-1"></a>
+* **Steps**
+```bash
+conda activate sdxl
+python inpainting_pipeline.py \
+  --input_dir  ./outputs/val_masks \
+  --output_dir ./outputs/sdxl_steps
+```
+
+* **Whole**
+```bash
+conda activate sdxl
+python sdxl_whole.py \
+  --input_dir  ./outputs/val_masks \
+  --output_dir ./outputs/sdxl_whole
+```
+
+---
+### DP‑GAN<a name="dp_gan-1"></a>
+1. Folge der Originaldoku, um Bilder zu erzeugen: <https://github.com/sj-li/DP_GAN>
+2. Merge mit Originalbildern & Masken:
+
+```bash
+python merge_gan_with_cityscapes.py \
+  --ganpics      /pfad/zu/dpgan_results \
+  --originalpics ./outputs/val_masks/images \
+  --masks        ./outputs/val_masks/masks \
+  --output       ./outputs/dpgan_merged
+```
+
+---
+### OASIS<a name="oasis-1"></a>
+1. Bilder generieren laut OASIS‑Repo.
+2. Merge‑Schritt analog zu DP‑GAN:
+
+```bash
+python merge_gan_with_cityscapes.py \
+  --ganpics      /pfad/zu/oasis_results \
+  --originalpics ./outputs/val_masks/images \
+  --masks        ./outputs/val_masks/masks \
+  --output       ./outputs/oasis_merged
+```
+
+---
+## Kontakt
+Fragen oder Probleme? → **ad41liqo@studserv.uni-leipzig.de**
+
