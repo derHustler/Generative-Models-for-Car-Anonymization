@@ -119,7 +119,7 @@ python sdxl_whole.py \
 2. Merge mit Originalbildern & Masken:
 
 ```bash
-python merge_gan_with_cityscapes.py \
+python combineGANpics.py \
   --ganpics      /pfad/zu/dpgan_results \
   --originalpics ./outputs/val_masks/images \
   --masks        ./outputs/val_masks/masks \
@@ -128,11 +128,11 @@ python merge_gan_with_cityscapes.py \
 
 ---
 ### OASIS<a name="oasis-1"></a>
-1. Bilder generieren laut OASIS‑Repo.
+1. Folge der Originaldoku, um Bilder zu erzeugen: <https://github.com/boschresearch/OASIS>
 2. Merge‑Schritt analog zu DP‑GAN:
 
 ```bash
-python merge_gan_with_cityscapes.py \
+python combineGANpics.py \
   --ganpics      /pfad/zu/oasis_results \
   --originalpics ./outputs/val_masks/images \
   --masks        ./outputs/val_masks/masks \
